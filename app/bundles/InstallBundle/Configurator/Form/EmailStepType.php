@@ -216,8 +216,14 @@ class EmailStepType extends AbstractType
             [
                 'choices'     => [
                     'eu-west-1' => 'mautic.email.config.mailer.amazon_api_region.eu_west_1',
+                    'eu-west-2' => 'mautic.email.config.mailer.amazon_api_region.eu_west_2',
                     'us-east-1' => 'mautic.email.config.mailer.amazon_api_region.us_east_1',
                     'us-west-2' => 'mautic.email.config.mailer.amazon_api_region.us_west_2',
+                    'ap-south-1' => 'mautic.email.config.mailer.amazon_api_region.ap_south_1',
+                    'ap-southeast-2' => 'mautic.email.config.mailer.amazon_api_region.ap_southeast_2',
+                    'ca-central-1' => 'mautic.email.config.mailer.amazon_api_region.ca_central_1',
+                    'eu-central-1' => 'mautic.email.config.mailer.amazon_api_region.eu_central_1',
+                    'sa-east-1' => 'mautic.email.config.mailer.amazon_api_region.sa_east_1',
                 ],
                 'label'       => 'mautic.email.config.mailer.amazon_api_region',
                 'label_attr'  => ['class' => 'control-label'],
