@@ -197,7 +197,6 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     public function start()
     {
         if (!$this->started) {
-            // put if region matches my loadbalence one do somthing diffrent
             $this->client = new SesClient([
                 'credentials' => new Credentials(
                     $this->getUsername(),
@@ -210,21 +209,27 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
                 ],
             ]);
 
-            $this->the_url_of_server = 'http://ses-loadbalence-1:8080';
+            $this->the_url_of_server = 'http://'.$this->getRegion().':8080';
 
             /**
              * AWS SES has a limit of how many messages can be sent in a 24h time slot. The remaining messages are calculated
              * from the api. The transport will fail when the quota is exceeded.
              */
 
-             
-            $quota = $this->getSesSendQuota();
-            // then end else here
-            $this->concurrency   = floor($quota->get('MaxSendRate'));
-            $emailQuotaRemaining = $quota->get('Max24HourSend') - $quota->get('SentLast24Hours');
+            if ($this->getRegion() == 'us-loadbalence-1') {
+                $url_ext = '/ses/send-qouta';
+                $quota = $this->call_to_alt_api(null, $url_ext);
+                $this->concurrency   = floor($quota->MaxSendRate);
+                $emailQuotaRemaining = $quota->Max24HourSend - $quota->SentLast24Hours;
+                
+            } else {
+                $quota               = $this->getSesSendQuota();
+                $this->concurrency   = floor($quota->get('MaxSendRate'));
+                $emailQuotaRemaining = $quota->get('Max24HourSend') - $quota->get('SentLast24Hours');
+            }
 
             if ($emailQuotaRemaining <= 0) {
-                $this->logger->error('Your AWS SES quota is currently exceeded, used '.$quota->get('SentLast24Hours').' of '.$quota->get('Max24HourSend'));
+                $this->logger->error('Your AWS SES quota is currently exceeded, remaining:'.$emailQuotaRemaining);
                 throw new \Exception('Your AWS SES quota is currently exceeded');
             }
 
@@ -366,34 +371,14 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     private function getSesSendQuota()
     {
         $this->logger->debug('Retrieving SES quota');
-        if ($this->getRegion() == 'us-loadbalence-1') {
-            $url_ext = '/ses/send-qouta';
-
-            $url = $this->the_url_of_server.$url_ext;    
-            //open connection
-            $ch = curl_init();    
-            //set the url, number of POST vars, POST data
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_HTTPGET, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
-    
-            //So that curl_exec returns the contents of the cURL; rather than echoing it
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    
-            //execute post
-            $result = curl_exec($ch);
-            // Close cURL resource
-            curl_close($ch);
-            return $result;
-            
-        } else {
-            try {
-                return $this->client->getSendQuota();
-            } catch (AwsException $e) {
-                $this->logger->error('Error retrieving AWS SES quota info: '.$e->getMessage());
-                throw new \Exception($e->getMessage());
-            }
+       
+        try {
+            return $this->client->getSendQuota();
+        } catch (AwsException $e) {
+            $this->logger->error('Error retrieving AWS SES quota info: '.$e->getMessage());
+            throw new \Exception($e->getMessage());
         }
+
     }
 
     /**
@@ -408,8 +393,6 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     private function call_to_alt_api($payload, $url_ext){
         $url = $this->the_url_of_server.$url_ext;
 
-        $payload = json_encode(['user' => $payload]);
-
         //open connection
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
@@ -419,6 +402,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
         //set the url, number of POST vars, POST data
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_POST, true);
+        if ($payload){
+            $payload = json_encode($payload);
+        } else {
+            $payload = json_encode(['api_key' => 'the_demo_api_key']);
+        };
         curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
 
@@ -429,6 +417,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
         $result = curl_exec($ch);
         // Close cURL resource
         curl_close($ch);
+        $result = json_decode($result);        
         return $result;
     }
 
