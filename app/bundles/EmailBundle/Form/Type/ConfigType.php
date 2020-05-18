@@ -323,14 +323,8 @@ class ConfigType extends AbstractType
             [
                 'choices'     => [
                     'email-smtp.eu-west-1.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.eu_west_1',
-                    'email-smtp.eu-west-2.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.eu_west_2',
                     'email-smtp.us-east-1.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.us_east_1',
                     'email-smtp.us-west-2.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.eu_west_2',
-                    'email-smtp.ap-south-1.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.ap_south_1',
-                    'email-smtp.ap-southeast-2.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.ap_southeast_2',
-                    'email-smtp.ca-central-1.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.ca_central_1',
-                    'email-smtp.eu-central-1.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.eu_central_1',
-                    'email-smtp.sa-east-1.amazonaws.com' => 'mautic.email.config.mailer.amazon_host.sa_east_1',
                 ],
                 'label'       => 'mautic.email.config.mailer.amazon_host',
                 'required'    => false,
@@ -358,6 +352,7 @@ class ConfigType extends AbstractType
                     'ca-central-1' => 'mautic.email.config.mailer.amazon_api_region.ca_central_1',
                     'eu-central-1' => 'mautic.email.config.mailer.amazon_api_region.eu_central_1',
                     'sa-east-1' => 'mautic.email.config.mailer.amazon_api_region.sa_east_1',
+                    'us-loadbalence-1' => 'mautic.email.config.mailer.amazon_api_region.us_loadbalence_1',
                 ],
                 'label'       => 'mautic.email.config.mailer.amazon_api_region',
                 'required'    => false,

@@ -108,6 +108,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     private $templateCache;
 
     /**
+     * @var string
+     */
+    private $the_url_of_server;
+
+    /**
      * AmazonApiTransport constructor.
      *
      * @param Http                $httpClient
@@ -192,6 +197,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     public function start()
     {
         if (!$this->started) {
+            // put if region matches my loadbalence one do somthing diffrent
             $this->client = new SesClient([
                 'credentials' => new Credentials(
                     $this->getUsername(),
@@ -204,11 +210,16 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
                 ],
             ]);
 
+            $this->the_url_of_server = 'https//:ses-loadbalence-1/';
+
             /**
              * AWS SES has a limit of how many messages can be sent in a 24h time slot. The remaining messages are calculated
              * from the api. The transport will fail when the quota is exceeded.
              */
-            $quota               = $this->getSesSendQuota();
+
+             
+            $quota = $this->getSesSendQuota();
+            // then end else here
             $this->concurrency   = floor($quota->get('MaxSendRate'));
             $emailQuotaRemaining = $quota->get('Max24HourSend') - $quota->get('SentLast24Hours');
 
@@ -251,6 +262,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
          * current sendBulkTemplatedEmail method doesn't support attachments
          */
         if (!empty($message->getAttachments())) {
+            // need to add this feature to my loadbalencer. Also put if here for the loadbalencer. 
             return $this->sendRawEmail($message, $evt, $failedRecipients);
         }
 
@@ -354,13 +366,72 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     private function getSesSendQuota()
     {
         $this->logger->debug('Retrieving SES quota');
-        try {
-            return $this->client->getSendQuota();
-        } catch (AwsException $e) {
-            $this->logger->error('Error retrieving AWS SES quota info: '.$e->getMessage());
-            throw new \Exception($e->getMessage());
+        if (getRegion() == 'us-loadbalence-1') {
+            $url_ext = '/ses/send-qouta';
+
+            $url = $this->the_url_of_server.$url_ext;    
+            //open connection
+            $ch = curl_init();    
+            //set the url, number of POST vars, POST data
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
+    
+            //So that curl_exec returns the contents of the cURL; rather than echoing it
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    
+            //execute post
+            $result = curl_exec($ch);
+            // Close cURL resource
+            curl_close($ch);
+            return $result;
+            
+        } else {
+            try {
+                return $this->client->getSendQuota();
+            } catch (AwsException $e) {
+                $this->logger->error('Error retrieving AWS SES quota info: '.$e->getMessage());
+                throw new \Exception($e->getMessage());
+            }
         }
     }
+
+    /**
+     * Retrieve from alt api.
+     *
+     * @return \Aws\Result
+     *
+     * @throws \Exception
+     *
+     * @see Me
+     */
+    private function call_to_alt_api($payload, $url_ext){
+        $url = $this->the_url_of_server.$url_ext;
+
+        $payload = json_encode(['user' => $payload]);
+
+        //open connection
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Header-Key: Header-Value',
+            'Header-Key-2: Header-Value-2'
+        ));
+        //set the url, number of POST vars, POST data
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
+
+        //So that curl_exec returns the contents of the cURL; rather than echoing it
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        //execute post
+        $result = curl_exec($ch);
+        // Close cURL resource
+        curl_close($ch);
+        return $result;
+    }
+
 
     /**
      * @param array $template
@@ -390,17 +461,22 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
          * wait for a throttle token
          */
         $this->createTemplateBucketConsumer->consume(1);
-
-        try {
-            $result = $this->client->createTemplate(['Template' => $template]);
-        } catch (AwsException $e) {
-            switch ($e->getAwsErrorCode()) {
-                case 'AlreadyExists':
-                    $this->logger->debug('Exception creating template: '.$templateName.', '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage().', ignoring');
-                    break;
-                default:
-                    $this->logger->error('Exception creating template: '.$templateName.', '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage());
-                    throw new \Exception($e->getMessage());
+        
+        if (getRegion() == 'us-loadbalence-1') {
+            $url_ext = '/ses/template/create';
+            $result = $this->call_to_alt_api($template, $url_ext);
+        } else {
+            try {
+                $result = $this->client->createTemplate(['Template' => $template]);
+            } catch (AwsException $e) {
+                switch ($e->getAwsErrorCode()) {
+                    case 'AlreadyExists':
+                        $this->logger->debug('Exception creating template: '.$templateName.', '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage().', ignoring');
+                        break;
+                    default:
+                        $this->logger->error('Exception creating template: '.$templateName.', '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage());
+                        throw new \Exception($e->getMessage());
+                }
             }
         }
 
@@ -425,11 +501,16 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     {
         $this->logger->debug('Deleting SES template: '.$templateName);
 
-        try {
-            return $this->client->deleteTemplate(['TemplateName' => $templateName]);
-        } catch (AwsException $e) {
-            $this->logger->error('Exception deleting template: '.$templateName.', '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage());
-            throw new \Exception($e->getMessage());
+        if (getRegion() == 'us_loadbalence_1') {
+            $url_ext = '/ses/template/delete';
+            $result = $this->call_to_alt_api($templateName, $url_ext);
+        } else {
+            try {
+                return $this->client->deleteTemplate(['TemplateName' => $templateName]);
+            } catch (AwsException $e) {
+                $this->logger->error('Exception deleting template: '.$templateName.', '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage());
+                throw new \Exception($e->getMessage());
+            }
         }
     }
 
@@ -450,11 +531,17 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
         // wait for a throttle token
         $this->sendTemplateBucketConsumer->consume($count);
 
-        try {
-            return $this->client->sendBulkTemplatedEmail($message);
-        } catch (AwsException $e) {
-            $this->logger->error('Exception sending email template: '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage());
-            throw new \Exception($e->getMessage());
+        if (getRegion() == 'us_loadbalence_1') {
+            $url_ext = '/ses/send/bulk/templated/email';
+            $result = $this->call_to_alt_api($message, $url_ext);
+        } else {
+            try {
+                // this is all we have to replace to send it to my api instead.
+                return $this->client->sendBulkTemplatedEmail($message);
+            } catch (AwsException $e) {
+                $this->logger->error('Exception sending email template: '.$e->getAwsErrorCode().', '.$e->getAwsErrorMessage());
+                throw new \Exception($e->getMessage());
+            }
         }
     }
 
