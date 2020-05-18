@@ -366,7 +366,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     private function getSesSendQuota()
     {
         $this->logger->debug('Retrieving SES quota');
-        if (getRegion() == 'us-loadbalence-1') {
+        if ($this->getRegion() == 'us-loadbalence-1') {
             $url_ext = '/ses/send-qouta';
 
             $url = $this->the_url_of_server.$url_ext;    
@@ -462,7 +462,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
          */
         $this->createTemplateBucketConsumer->consume(1);
         
-        if (getRegion() == 'us-loadbalence-1') {
+        if ($this->getRegion() == 'us-loadbalence-1') {
             $url_ext = '/ses/template/create';
             $result = $this->call_to_alt_api($template, $url_ext);
         } else {
@@ -501,7 +501,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     {
         $this->logger->debug('Deleting SES template: '.$templateName);
 
-        if (getRegion() == 'us_loadbalence_1') {
+        if ($this->getRegion() == 'us-loadbalence-1') {
             $url_ext = '/ses/template/delete';
             $result = $this->call_to_alt_api($templateName, $url_ext);
         } else {
@@ -531,7 +531,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
         // wait for a throttle token
         $this->sendTemplateBucketConsumer->consume($count);
 
-        if (getRegion() == 'us_loadbalence_1') {
+        if ($this->getRegion() == 'us-loadbalence-1') {
             $url_ext = '/ses/send/bulk/templated/email';
             $result = $this->call_to_alt_api($message, $url_ext);
         } else {
