@@ -210,7 +210,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
                 ],
             ]);
 
-            $this->the_url_of_server = 'https//:ses-loadbalence-1/';
+            $this->the_url_of_server = 'http://ses-loadbalence-1:8080';
 
             /**
              * AWS SES has a limit of how many messages can be sent in a 24h time slot. The remaining messages are calculated
