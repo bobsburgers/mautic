@@ -738,7 +738,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
      */
     public function getMaxBatchLimit()
     {
-        return 10;
+        return 50;
     }
 
     /**
