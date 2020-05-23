@@ -760,7 +760,17 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
      */
     public function getBatchRecipientCount(\Swift_Message $message, $toBeAdded = 1, $type = 'to')
     {
-        return count($message->getTo()) + count($message->getCc()) + count($message->getBcc()) + $toBeAdded;
+        $da_count = 0;
+        if($message->getTo()){
+            $da_count = $da_count + count($message->getTo());
+        }
+        if($message->getCc()){
+            $da_count = $da_count + count($message->getCc());
+        }
+        if($message->getBcc()){
+            $da_count = $da_count + count($message->getBcc());
+        }
+        return $da_count + $toBeAdded;
     }
 
     /**
