@@ -95,6 +95,7 @@ class IpLookupHelper
     {
         if (null !== $this->request) {
             $ipHolders = [
+                'HTTP_CF_CONNECTING_IP',
                 'HTTP_CLIENT_IP',
                 'HTTP_X_FORWARDED_FOR',
                 'HTTP_X_FORWARDED',
