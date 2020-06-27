@@ -41,6 +41,9 @@ use Symfony\Component\Translation\TranslatorInterface;
  * Class AmazonApiTransport.
  */
 class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_Transport, TokenTransportInterface, CallbackTransportInterface, BounceProcessorInterface, UnsubscriptionProcessorInterface
+class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_Transport, TokenTransportInterface, CallbackTransportInterface, BounceProcessorInterface, UnsubscriptionProcessorInterface
+class AmazonTransport extends \Swift_SmtpTransport implements CallbackTransportInterface, BounceProcessorInterface, UnsubscriptionProcessorInterface
+
 {
     /**
      * From address for SNS email.
@@ -243,12 +246,12 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     }
 
     /**
-     * @param \Swift_Mime_SimpleMessage $message
+     * @param \Swift_Mime_Message $message
      * @param null                $failedRecipients
      *
      * @return int count of recipients
      */
-    public function send(\Swift_Mime_SimpleMessage $message, &$failedRecipients = null)
+    public function send(\Swift_Mime_Message $message, &$failedRecipients = null)
     {
         $this->message = $message;
 
@@ -537,11 +540,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     /**
      * Parse message into a template and recipients with their respective replacement tokens.
      *
-     * @param \Swift_Mime_SimpleMessage $message
+     * @param \Swift_Mime_Message $message
      *
      * @return array of a template and a message
      */
-    private function constructSesTemplateAndMessage(\Swift_Mime_SimpleMessage $message)
+    private function constructSesTemplateAndMessage(\Swift_Mime_Message $message)
     {
         $this->message = $message;
         $metadata      = $this->getMetadata();
@@ -623,13 +626,13 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     }
 
     /**
-     * @param \Swift_Mime_SimpleMessage $message
+     * @param \Swift_Mime_Message $message
      * @param \Swift_Events_SendEvent @evt
      * @param null $failedRecipients
      *
      * @return array
      */
-    public function sendRawEmail(\Swift_Mime_SimpleMessage $message, \Swift_Events_SendEvent $evt, &$failedRecipients = null)
+    public function sendRawEmail(\Swift_Mime_Message $message, \Swift_Events_SendEvent $evt, &$failedRecipients = null)
     {
         try {
             $this->start();
@@ -664,11 +667,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     }
 
     /**
-     * @param \Swift_Mime_SimpleMessage $message
+     * @param \Swift_Mime_Message $message
      *
      * @return array
      */
-    public function getAmazonMessage(\Swift_Mime_SimpleMessage $message)
+    public function getAmazonMessage(\Swift_Mime_Message $message)
     {
         $this->message = $message;
         $metadata      = $this->getMetadata();
