@@ -40,7 +40,7 @@ use Symfony\Component\Translation\TranslatorInterface;
 /**
  * Class AmazonApiTransport.
  */
-class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_Transport, InterfaceTokenTransport, CallbackTransportInterface, BounceProcessorInterface, UnsubscriptionProcessorInterface
+class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_Transport, TokenTransportInterface, CallbackTransportInterface, BounceProcessorInterface, UnsubscriptionProcessorInterface
 {
     /**
      * From address for SNS email.
@@ -243,12 +243,12 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     }
 
     /**
-     * @param \Swift_Mime_Message $message
+     * @param \Swift_Mime_SimpleMessage $message
      * @param null                $failedRecipients
      *
      * @return int count of recipients
      */
-    public function send(\Swift_Mime_Message $message, &$failedRecipients = null)
+    public function send(\Swift_Mime_SimpleMessage $message, &$failedRecipients = null)
     {
         $this->message = $message;
 
@@ -537,11 +537,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     /**
      * Parse message into a template and recipients with their respective replacement tokens.
      *
-     * @param \Swift_Mime_Message $message
+     * @param \Swift_Mime_SimpleMessage $message
      *
      * @return array of a template and a message
      */
-    private function constructSesTemplateAndMessage(\Swift_Mime_Message $message)
+    private function constructSesTemplateAndMessage(\Swift_Mime_SimpleMessage $message)
     {
         $this->message = $message;
         $metadata      = $this->getMetadata();
@@ -570,10 +570,18 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
         if (count($messageArray['recipients']['cc']) > 0) {
             $BccAddresses = array_keys($messageArray['recipients']['bcc']);
         }
+        $replyToAddresses = [];
+        if (isset($messageArray['replyTo']['email'])) {
+            $replyToAddresses = [$messageArray['replyTo']['email']];
+        }
 
+        $ConfigurationSetName = null;
+        if (isset($messageArray['headers']['ConfigurationSetName'])) {
+            $ConfigurationSetName = $messageArray['headers']['ConfigurationSetName'];
+        }
         //build amazon ses template array
         $amazonTemplate = [
-            'TemplateName' => 'MauticTemplate-'.$emailId.'-'.md5($messageArray['subject'].$messageArray['html']), //unique template name
+            'TemplateName' => 'MauticTemplate-'.$emailId.'-'.md5($messageArray['subject'].$messageArray['html'].'-'.getmypid()), //unique template name
             'SubjectPart'  => $messageArray['subject'],
             'TextPart'     => $messageArray['text'],
             'HtmlPart'     => $messageArray['html'],
@@ -598,9 +606,12 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
 
         //build amazon ses message array
         $amazonMessage = [
+            'ConfigurationSetName' => $ConfigurationSetName,
             'DefaultTemplateData'   => $destinations[0]['ReplacementTemplateData'],
             'Destinations'          => $destinations,
             'Source'                => $messageArray['from']['email'],
+            'ReplyToAddresses'     => $replyToAddresses,
+            'ReturnPath'           => $messageArray['ReturnPath'] ?? null,
             'Template'              => $amazonTemplate['TemplateName'],
         ];
 
@@ -612,13 +623,13 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     }
 
     /**
-     * @param \Swift_Mime_Message $message
+     * @param \Swift_Mime_SimpleMessage $message
      * @param \Swift_Events_SendEvent @evt
      * @param null $failedRecipients
      *
      * @return array
      */
-    public function sendRawEmail(\Swift_Mime_Message $message, \Swift_Events_SendEvent $evt, &$failedRecipients = null)
+    public function sendRawEmail(\Swift_Mime_SimpleMessage $message, \Swift_Events_SendEvent $evt, &$failedRecipients = null)
     {
         try {
             $this->start();
@@ -653,11 +664,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
     }
 
     /**
-     * @param \Swift_Mime_Message $message
+     * @param \Swift_Mime_SimpleMessage $message
      *
      * @return array
      */
-    public function getAmazonMessage(\Swift_Mime_Message $message)
+    public function getAmazonMessage(\Swift_Mime_SimpleMessage $message)
     {
         $this->message = $message;
         $metadata      = $this->getMetadata();
@@ -706,6 +717,12 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
             $message .= 'Bcc: '.implode(',', array_keys($msg['recipients']['bcc']))."\n";
         }
         $message .= "Content-Type: multipart/mixed; boundary=\"$separator_multipart\"\n";
+        if (isset($msg['headers'])) {
+            foreach ($msg['headers'] as $key => $value) {
+                $message .= "$key: " . $value . "\n";
+            }
+        }
+
         $message .= "\n--$separator_multipart\n";
 
         $message .= "Content-Type: multipart/alternative; boundary=\"$separator\"\n";
@@ -738,7 +755,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
      */
     public function getMaxBatchLimit()
     {
-        return 10;
+        return 50;
     }
 
     /**
@@ -782,7 +799,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
      */
     public function processCallbackRequest(Request $request)
     {
-        $this->logger->error('Receiving webhook from Amazon');
+        $this->logger->debug('Receiving webhook from Amazon');
 
         $payload = json_decode($request->getContent(), true);
 
@@ -802,11 +819,11 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
             throw new HttpException(400, "Key 'Type' not found in payload ");
         }
 
-        if ($payload['Type'] == 'SubscriptionConfirmation') {
+        if ('SubscriptionConfirmation' == $payload['Type']) {
             // Confirm Amazon SNS subscription by calling back the SubscribeURL from the playload
             try {
                 $response = $this->httpClient->get($payload['SubscribeURL']);
-                if ($response->code == 200) {
+                if (200 == $response->code) {
                     $this->logger->info('Callback to SubscribeURL from Amazon SNS successfully');
 
                     return;
@@ -822,23 +839,34 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
             return;
         }
 
-        if ($payload['Type'] == 'Notification') {
+        if ('Notification' == $payload['Type']) {
             $message = json_decode($payload['Message'], true);
 
             // only deal with hard bounces
-            if ($message['notificationType'] == 'Bounce' && $message['bounce']['bounceType'] == 'Permanent') {
+            if ('Bounce' == $message['notificationType'] && 'Permanent' == $message['bounce']['bounceType']) {
+                $emailId = null;
+
+                if (isset($message['mail']['headers'])) {
+                    foreach ($message['mail']['headers'] as $header) {
+                        if ('X-EMAIL-ID' === $header['name']) {
+                            $emailId = $header['value'];
+                        }
+                    }
+                }
+
                 // Get bounced recipients in an array
                 $bouncedRecipients = $message['bounce']['bouncedRecipients'];
                 foreach ($bouncedRecipients as $bouncedRecipient) {
-                    $this->transportCallback->addFailureByAddress($bouncedRecipient['emailAddress'], $bouncedRecipient['diagnosticCode']);
-                    $this->logger->debug("Mark email '".$bouncedRecipient['emailAddress']."' as bounced, reason: ".$bouncedRecipient['diagnosticCode']);
+                    $bounceCode = array_key_exists('diagnosticCode', $bouncedRecipient) ? $bouncedRecipient['diagnosticCode'] : 'unknown';
+                    $this->transportCallback->addFailureByAddress($bouncedRecipient['emailAddress'], $bounceCode, DoNotContact::BOUNCED, $emailId);
+                    $this->logger->debug("Mark email '".$bouncedRecipient['emailAddress']."' as bounced, reason: ".$bounceCode);
                 }
 
                 return;
             }
 
             // unsubscribe customer that complain about spam at their mail provider
-            if ($message['notificationType'] == 'Complaint') {
+            if ('Complaint' == $message['notificationType']) {
                 foreach ($message['complaint']['complainedRecipients'] as $complainedRecipient) {
                     $reason = null;
                     if (isset($message['complaint']['complaintFeedbackType'])) {
@@ -856,7 +884,7 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
                         }
                     }
 
-                    if ($reason == null) {
+                    if (null == $reason) {
                         $reason = $this->translator->trans('mautic.email.complaint.reason.unknown');
                     }
 
@@ -864,8 +892,14 @@ class AmazonApiTransport extends AbstractTokenArrayTransport implements \Swift_T
 
                     $this->logger->debug("Unsubscribe email '".$complainedRecipient['emailAddress']."'");
                 }
+                
+                return;
+
             }
         }
+
+        $this->logger->warn("Received SES webhook of type '$payload[Type]' but couldn't understand payload");
+        $this->logger->debug('SES webhook payload: '.json_encode($payload));
     }
 
     /**
